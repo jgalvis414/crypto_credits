@@ -163,8 +163,33 @@ contract CompanyManagerTest is Test {
         vm.stopPrank();
 
         // Fetch the credit struct
-        CompanyManager.Credit memory credit = companyManager.getCredit(0);
-        assertEq(credit.id, 0);
+        (
+            address creditUser,
+            uint256 amount,
+            address lender,
+            uint256 rate,
+            uint256 nextInstallmentDate,
+            uint256 totalInstallments,
+            uint256 protocolFee,
+            uint256 totalAmount,
+            uint256 id,
+            bool isActive,
+            bool isPaid
+        ) = companyManager.credits(0);
+        assertEq(id, 0);
+        assertEq(creditUser, user);
+        assertEq(amount, 50 * 10 ** usdc.decimals());
+        assertEq(lender, company);
+        assertEq(rate, 5);
+        assertEq(nextInstallmentDate, block.timestamp + 30 days);
+        assertEq(totalInstallments, 6);
+        assertEq(protocolFee, 10);
+        assertEq(
+            totalAmount,
+            50 * 10 ** usdc.decimals() + (50 * 10 ** usdc.decimals() * 5) / 100
+        );
+        assertEq(isActive, false);
+        assertEq(isPaid, false);
 
         (
             ,
