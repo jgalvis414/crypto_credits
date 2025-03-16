@@ -71,7 +71,7 @@ contract CompanyManager {
         uint256 key,
         uint256 _amount,
         uint256 _numberInstallment
-    ) public {
+    ) internal {
         installment memory newInstallment = installment({
             creditId: key,
             amount: _amount,
