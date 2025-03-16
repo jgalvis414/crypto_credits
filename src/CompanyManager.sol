@@ -288,10 +288,6 @@ contract CompanyManager {
         }
     }
 
-    function getCredit(uint256 _creditId) public view returns (Credit memory) {
-        return credits[_creditId];
-    }
-
     function acceptCredit() external returns (Credit memory) {
         require(
             users[msg.sender].hasActiveCredit == false,
@@ -330,11 +326,5 @@ contract CompanyManager {
         );
         require(success, "Transferencia fallida");
         return credits[_creditId];
-    }
-
-    function sendViaCall(address _to, uint256 _amount) public returns (bool) {
-        (bool success, ) = _to.call{value: _amount}(""); // Send Ether
-        require(success, "Call failed");
-        return success;
     }
 }
