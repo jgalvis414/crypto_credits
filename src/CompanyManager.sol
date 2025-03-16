@@ -162,6 +162,7 @@ contract CompanyManager {
 
         // Update the company's balance
         companies[msg.sender].balance -= _amount;
+        companies[msg.sender].avaiableBalance -= _amount;
 
         // Transfer USDC tokens to the company
         bool success = usdc.transfer(msg.sender, _amount);

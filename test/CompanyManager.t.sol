@@ -100,10 +100,20 @@ contract CompanyManagerTest is Test {
         vm.stopPrank();
 
         // Step 6: Verify the company's balance after withdrawal
-        (, uint256 balanceAfter, , , , , , ) = companyManager.companies(
+        (
+        ,
+        uint256 balanceAfter,
+        ,
+        ,
+        ,
+        ,
+        ,
+        uint256 avaiableBalance
+) = companyManager.companies(
             company
         );
         assertEq(balanceAfter, 40 * 10 ** usdc.decimals());
+        assertEq(avaiableBalance, 40 * 10 ** usdc.decimals());
 
         assertEq(usdc.balanceOf(company), 50 * 10 ** usdc.decimals());
     }
