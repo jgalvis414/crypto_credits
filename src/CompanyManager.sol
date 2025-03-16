@@ -3,12 +3,11 @@
 pragma solidity >=0.7.0 <0.9.0;
 
 import {console} from "forge-std/console.sol";
-
-// import "hardhat/console.sol";
+import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract CompanyManager {
     address public owner;
-
+    IERC20 public usdc;
     uint256 public creditCounter;
     uint256 public ownerBalance;
 
@@ -72,7 +71,7 @@ contract CompanyManager {
         uint256 key,
         uint256 _amount,
         uint256 _numberInstallment
-    ) public {
+    ) internal {
         installment memory newInstallment = installment({
             creditId: key,
             amount: _amount,
@@ -91,9 +90,10 @@ contract CompanyManager {
 
     mapping(address user => User) public users;
 
-    constructor() {
+    constructor(address _usdcAddress) {
         owner = msg.sender;
         creditCounter = 0;
+        usdc = IERC20(_usdcAddress);
     }
 
     modifier onlyOwner() {
@@ -112,7 +112,7 @@ contract CompanyManager {
     modifier onlyActive() {
         require(
             companies[msg.sender].isActive == true,
-            "Company is not actived"
+            "Company is not active"
         );
         _;
     }
@@ -130,32 +130,50 @@ contract CompanyManager {
         companies[_companyAddress].protocolFee = _protocolFee;
     }
 
-    function addFundsCompany() external payable onlyActive onlyWhitelisted {
-        uint256 _ownerAmount = (msg.value * companies[msg.sender].protocolFee) /
+    function addFundsCompany(
+        uint256 _amount
+    ) external onlyActive onlyWhitelisted {
+        // Transfer USDC from the caller to the contract
+        require(
+            usdc.transferFrom(msg.sender, address(this), _amount),
+            "USDC transfer failed"
+        );
+
+        // Calculate the owner's share (protocol fee)
+        uint256 _ownerAmount = (_amount * companies[msg.sender].protocolFee) /
             100;
-        companies[msg.sender].balance += msg.value;
-        companies[msg.sender].avaiableBalance += msg.value - _ownerAmount;
+
+        // Update the company's balance and available balance
+        companies[msg.sender].balance += _amount - _ownerAmount;
+        companies[msg.sender].avaiableBalance += _amount - _ownerAmount;
+
+        // Update the owner's balance
         ownerBalance += _ownerAmount;
     }
 
     function withdrawFundsCompany(
         uint256 _amount
     ) external onlyActive onlyWhitelisted {
+        // Ensure the company has sufficient balance
         require(
             companies[msg.sender].balance >= _amount,
             "No hay suficiente fondos"
         );
+
+        // Update the company's balance
         companies[msg.sender].balance -= _amount;
-        (bool success, ) = msg.sender.call{value: _amount}("");
+        companies[msg.sender].avaiableBalance -= _amount;
+
+        // Transfer USDC tokens to the company
+        bool success = usdc.transfer(msg.sender, _amount);
         require(success, "Transferencia fallida");
     }
 
     function withdrawOwnerFunds(uint256 _amount) external onlyOwner {
         require(ownerBalance >= _amount, "No hay suficiente fondos");
         ownerBalance -= _amount;
-        (bool success, ) = msg.sender.call{value: _amount}("");
+        bool success = usdc.transfer(msg.sender, _amount);
         require(success, "Transferencia fallida");
-        ownerBalance = 0;
     }
 
     function registerUser(
@@ -210,28 +228,28 @@ contract CompanyManager {
         creditCounter++;
     }
 
-    function payInstallment() external payable {
+    function payInstallment(uint256 _amount) external {
         require(
             recentCredits[msg.sender].isActive == true,
             "El credito no esta activo"
         );
         uint256 _creditId = recentCredits[msg.sender].id;
         uint256 _installmentId = 0;
-        bool _isPaid = true;
 
         for (uint256 i = 0; i < installments[_creditId].length; i++) {
             if (installments[_creditId][i].isPaid == false) {
-                _isPaid = false;
                 _installmentId = i;
                 break;
             }
         }
 
-        require(!_isPaid, "All installments are paid");
-
         require(
-            msg.value == installments[_creditId][_installmentId].amount,
+            _amount == installments[_creditId][_installmentId].amount,
             "El monto pagado no es correcto"
+        );
+        require(
+            usdc.transferFrom(msg.sender, address(this), _amount),
+            "USDC transfer failed"
         );
 
         uint256 _date = installments[_creditId][_installmentId].date;
@@ -239,40 +257,36 @@ contract CompanyManager {
         installments[_creditId][_installmentId].isPaid = true;
         installments[_creditId][_installmentId].date = block.timestamp;
 
-        installments[_creditId][_installmentId].score = msg.value;
+        installments[_creditId][_installmentId].score = _amount;
 
-        companies[credits[_creditId].lender].avaiableBalance += msg.value;
+        companies[credits[_creditId].lender].avaiableBalance += _amount;
         unchecked {
-            if (
-                msg.value > companies[credits[_creditId].lender].creditBalance
-            ) {
+            if (_amount >= companies[credits[_creditId].lender].creditBalance) {
                 companies[credits[_creditId].lender].creditBalance = 0;
             } else {
-                companies[credits[_creditId].lender].creditBalance -= msg.value;
+                companies[credits[_creditId].lender].creditBalance -= _amount;
             }
         }
         uint256 scoreIncrement;
         if (block.timestamp < (_date - 5 days)) {
-            scoreIncrement = msg.value * 2;
+            scoreIncrement = _amount * 2;
         } else if (block.timestamp < (_date + 1 minutes)) {
-            scoreIncrement = msg.value;
+            scoreIncrement = _amount;
         } else {
-            scoreIncrement = msg.value;
+            scoreIncrement = _amount;
         }
 
         installments[_creditId][_installmentId].score += scoreIncrement;
         userStats[credits[_creditId].user].score += scoreIncrement;
-        userStats[credits[_creditId].user].creditsPaid += msg.value;
+        userStats[credits[_creditId].user].creditsPaid += _amount;
 
         if (_installmentId == credits[_creditId].totalInstallments - 1) {
             credits[_creditId].isPaid = true;
             credits[_creditId].isActive = false;
+            recentCredits[credits[_creditId].user].isActive = false;
+            recentCredits[credits[_creditId].user].isPaid = true;
             users[credits[_creditId].user].hasActiveCredit = false;
         }
-    }
-
-    function getCredit(uint256 _creditId) public view returns (Credit memory) {
-        return credits[_creditId];
     }
 
     function acceptCredit() external returns (Credit memory) {
@@ -307,13 +321,11 @@ contract CompanyManager {
             .amount;
         userStats[msg.sender].avaiableOnTimeScore += recentCredits[msg.sender]
             .totalAmount;
-        sendViaCall(msg.sender, recentCredits[msg.sender].amount);
+        bool success = usdc.transfer(
+            msg.sender,
+            recentCredits[msg.sender].amount
+        );
+        require(success, "Transferencia fallida");
         return credits[_creditId];
-    }
-
-    function sendViaCall(address _to, uint256 _amount) public returns (bool) {
-        (bool success, ) = _to.call{value: _amount}(""); // Send Ether
-        require(success, "Call failed");
-        return success;
     }
 }

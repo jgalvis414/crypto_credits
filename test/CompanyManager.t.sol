@@ -4,31 +4,59 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 import "../src/CompanyManager.sol"; // Adjust the import path as necessary
 import {console} from "forge-std/console.sol";
+import {MockUSDC} from "../src/MockUSDC.sol";
 
 contract CompanyManagerTest is Test {
     CompanyManager companyManager;
+    MockUSDC usdc;
     address owner = address(1);
     address company = address(2);
     address user = address(3);
 
     function setUp() public {
+        usdc = new MockUSDC();
         vm.prank(owner);
-        companyManager = new CompanyManager();
+        companyManager = new CompanyManager(address(usdc));
     }
 
     function testRegisterCompany() public {
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        (bool isWhitelisted, , , , , , , ) = companyManager.companies(company);
+        (
+            bool isWhitelisted,
+            uint256 balance,
+            uint256 premium,
+            address companyAddress,
+            bool isActive,
+            uint256 protocolFee,
+            uint256 creditBalance,
+            uint256 avaiableBalance
+        ) = companyManager.companies(company);
         assertTrue(isWhitelisted);
+        assertTrue(isActive);
+        assertEq(balance, 0);
+        assertEq(premium, 0);
+        assertEq(companyAddress, company);
+        assertEq(protocolFee, 10);
+        assertEq(creditBalance, 0);
+        assertEq(avaiableBalance, 0);
     }
 
     function testAddFundsCompany() public {
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
-        companyManager.registerCompany(company, 10);
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
+        companyManager.registerCompany(company, 10); // 10% protocol fee
+
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
+        vm.stopPrank();
+
+        // Step 4: Verify the company's balance and available balance
         (
             ,
             uint256 balance,
@@ -39,61 +67,86 @@ contract CompanyManagerTest is Test {
             uint256 creditBalance,
             uint256 availableBalance
         ) = companyManager.companies(company);
-        assertEq(balance, 1 ether);
+        assertEq(balance, 90 * 10 ** usdc.decimals());
         assertEq(creditBalance, 0);
-        assertEq(availableBalance, 1 ether - 0.1 ether);
+        assertEq(availableBalance, 90 * 10 ** usdc.decimals()); // 90% of 100 USDC
+
+        // Step 5: Verify the owner's balance
+        uint256 ownerBalance = companyManager.ownerBalance();
+        assertEq(ownerBalance, 10 * 10 ** usdc.decimals()); // 10% of 100 USDC
     }
 
     function testWithdrawFundsCompany() public {
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
         // Step 1: Register a company and add funds
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
 
-        // Step 2: Verify the company's balance before withdrawal
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
+
+        // Step 4: Verify the company's balance before withdrawal
         (, uint256 balanceBefore, , , , , , ) = companyManager.companies(
             company
         );
-        assertEq(balanceBefore, 1 ether);
+        assertEq(balanceBefore, 90 * 10 ** usdc.decimals());
 
-        // Step 3: Withdraw funds from the company
-        vm.prank(company);
-        companyManager.withdrawFundsCompany(0.5 ether);
+        // Step 5: Withdraw funds from the company
+        companyManager.withdrawFundsCompany(50 * 10 ** usdc.decimals());
+        vm.stopPrank();
 
-        // Step 4: Verify the company's balance after withdrawal
-        (, uint256 balanceAfter, , , , , , ) = companyManager.companies(
+        // Step 6: Verify the company's balance after withdrawal
+        (
+        ,
+        uint256 balanceAfter,
+        ,
+        ,
+        ,
+        ,
+        ,
+        uint256 avaiableBalance
+) = companyManager.companies(
             company
         );
-        assertEq(balanceAfter, 0.5 ether);
+        assertEq(balanceAfter, 40 * 10 ** usdc.decimals());
+        assertEq(avaiableBalance, 40 * 10 ** usdc.decimals());
 
-        // Step 5: Verify the company's ETH balance increased
-        assertEq(company.balance, 0.5 ether);
+        assertEq(usdc.balanceOf(company), 50 * 10 ** usdc.decimals());
     }
 
     function testWithdrawOwnerFunds() public {
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
         // Step 1: Register a company and add funds
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
+
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
+        vm.stopPrank();
 
         // Step 2: Verify the owner's balance before withdrawal
         uint256 ownerBalanceBefore = companyManager.ownerBalance();
-        assertEq(ownerBalanceBefore, 0.1 ether); // 10% of 1 ether
+        assertEq(ownerBalanceBefore, 10 * 10 ** usdc.decimals()); // 10% of 100 USDC
 
         // Step 3: Withdraw owner funds
-        vm.prank(owner);
-        companyManager.withdrawOwnerFunds(0.1 ether);
+        vm.startPrank(owner);
+        companyManager.withdrawOwnerFunds(10 * 10 ** usdc.decimals());
+        vm.stopPrank();
 
         // Step 4: Verify the owner's balance after withdrawal
         uint256 ownerBalanceAfter = companyManager.ownerBalance();
         assertEq(ownerBalanceAfter, 0);
 
         // Step 5: Verify the owner's ETH balance increased
-        assertEq(owner.balance, 0.1 ether);
+        assertEq(usdc.balanceOf(owner), 10 * 10 ** usdc.decimals());
     }
 
     function testRegisterUser() public {
@@ -106,19 +159,47 @@ contract CompanyManagerTest is Test {
     }
 
     function testRegisterCredit() public {
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
-        companyManager.registerCompany(company, 10);
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
-        vm.prank(company);
+        companyManager.registerCompany(company, 10); // 10% protocol fee
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
         companyManager.registerUser(user);
-        vm.prank(company);
-        companyManager.registerCredit(user, 0.5 ether, 5, 6);
+        companyManager.registerCredit(user, 50 * 10 ** usdc.decimals(), 5, 6);
+        vm.stopPrank();
 
         // Fetch the credit struct
-        CompanyManager.Credit memory credit = companyManager.getCredit(0);
-        assertEq(credit.id, 0);
+        (
+            address creditUser,
+            uint256 amount,
+            address lender,
+            uint256 rate,
+            uint256 nextInstallmentDate,
+            uint256 totalInstallments,
+            uint256 protocolFee,
+            uint256 totalAmount,
+            uint256 id,
+            bool isActive,
+            bool isPaid
+        ) = companyManager.credits(0);
+        assertEq(id, 0);
+        assertEq(creditUser, user);
+        assertEq(amount, 50 * 10 ** usdc.decimals());
+        assertEq(lender, company);
+        assertEq(rate, 5);
+        assertEq(nextInstallmentDate, block.timestamp + 30 days);
+        assertEq(totalInstallments, 6);
+        assertEq(protocolFee, 10);
+        assertEq(
+            totalAmount,
+            50 * 10 ** usdc.decimals() + (50 * 10 ** usdc.decimals() * 5) / 100
+        );
+        assertEq(isActive, false);
+        assertEq(isPaid, false);
 
         (
             ,
@@ -130,40 +211,33 @@ contract CompanyManagerTest is Test {
             uint256 creditBalance,
             uint256 availableBalance
         ) = companyManager.companies(company);
-        assertEq(creditBalance, 0.5 ether);
-        assertEq(availableBalance, 0.9 ether - 0.5 ether);
+        assertEq(creditBalance, 50 * 10 ** usdc.decimals());
+        assertEq(availableBalance, 40 * 10 ** usdc.decimals());
     }
 
     function testAcceptCredit() public {
-        // Step 1: Register a company and add funds
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
-
-        // Step 2: Register a user
-        vm.prank(company);
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
         companyManager.registerUser(user);
-
-        // Step 3: Register a credit for the user
-        vm.prank(company);
-        companyManager.registerCredit(user, 0.5 ether, 5, 6);
+        companyManager.registerCredit(user, 50 * 10 ** usdc.decimals(), 5, 6);
+        vm.stopPrank();
 
         // Step 4: User accepts the credit
         vm.prank(user);
         CompanyManager.Credit memory credit = companyManager.acceptCredit();
         assertTrue(credit.isActive);
 
-
-        // Step 5: Verify the credit is active and the user has an active credit
-        // CompanyManager.Credit memory credit = companyManager.getCredit(0);
-        // assertTrue(credit.isActive);
-
         (, , bool hasActiveCredit, ) = companyManager.users(user);
         assertTrue(hasActiveCredit);
 
-        // Step 6: Verify the installments were created
+        // Step 5: Verify the installments were created
         uint256 creditId = 0;
         uint256 totalInstallments = 6;
         for (uint256 i = 0; i < totalInstallments; i++) {
@@ -171,11 +245,11 @@ contract CompanyManagerTest is Test {
                 creditId,
                 i
             );
-            assertEq(amount, 0.0875 ether);
+            assertEq(amount, 875 * 10 ** (usdc.decimals() - 2));
             assertFalse(isPaid); // Ensure installments are not paid yet
         }
 
-        // Step 7: Verify the user's stats were updated
+        // Step 6: Verify the user's stats were updated
         (
             ,
             ,
@@ -184,34 +258,37 @@ contract CompanyManagerTest is Test {
             ,
             uint256 avaiableOnTimeScore
         ) = companyManager.userStats(user);
-        assertEq(creditsReceived, 0.5 ether);
-        assertEq(avaiableOnTimeScore, 0.525 ether);
+        assertEq(creditsReceived, 50 * 10 ** usdc.decimals());
+        assertEq(avaiableOnTimeScore, 525 * 10 ** (usdc.decimals() - 1));
     }
 
     function testPayInstallment() public {
-        // Step 1: Register a company and add funds
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        usdc.transfer(user, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
-
-        // Step 2: Register a user
-        vm.prank(company);
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
         companyManager.registerUser(user);
-
-        // Step 3: Register a credit for the user
-        vm.prank(company);
-        companyManager.registerCredit(user, 0.5 ether, 5, 6);
+        companyManager.registerCredit(user, 50 * 10 ** usdc.decimals(), 5, 6);
+        vm.stopPrank();
 
         // Step 4: User accepts the credit
-        vm.prank(user);
-        companyManager.acceptCredit();
+        vm.startPrank(user);
+        CompanyManager.Credit memory credit = companyManager.acceptCredit();
+        assertTrue(credit.isActive);
 
         // Step 5: User pays the first installment
-        vm.prank(user);
-        vm.deal(user, 0.1 ether); // Fund the user with enough ETH to pay the installment
-        companyManager.payInstallment{value: 0.0875 ether}();
+        usdc.approve(
+            address(companyManager),
+            875 * 10 ** (usdc.decimals() - 2)
+        );
+        companyManager.payInstallment(875 * 10 ** (usdc.decimals() - 2));
+        vm.stopPrank();
 
         // Step 6: Verify the installment is marked as paid
         (, , , bool isInstallmentPaid, , ) = companyManager.installments(0, 0);
@@ -228,44 +305,43 @@ contract CompanyManagerTest is Test {
             uint256 creditBalance,
             uint256 availableBalance
         ) = companyManager.companies(company);
-        assertEq(creditBalance, 0.5 ether - 0.0875 ether);
-        assertEq(availableBalance, 0.4 ether + 0.0875 ether);
+        assertEq(
+            creditBalance,
+            50 * 10 ** (usdc.decimals()) - 875 * 10 ** (usdc.decimals() - 2)
+        );
+        assertEq(
+            availableBalance,
+            40 * 10 ** (usdc.decimals()) + 875 * 10 ** (usdc.decimals() - 2)
+        );
     }
 
     function testPayAllInstallments() public {
-        // Step 1: Register a company and add funds
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        usdc.transfer(user, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
-
-        // Step 2: Register a user
-        vm.prank(company);
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
         companyManager.registerUser(user);
-
-        // Step 3: Register a credit for the user
-        vm.prank(company);
-        companyManager.registerCredit(user, 0.5 ether, 5, 6);
+        companyManager.registerCredit(user, 50 * 10 ** usdc.decimals(), 5, 6);
+        vm.stopPrank();
 
         // Step 4: User accepts the credit
-        vm.prank(user);
-        companyManager.acceptCredit();
+        vm.startPrank(user);
+        CompanyManager.Credit memory credit = companyManager.acceptCredit();
+        assertTrue(credit.isActive);
 
-        // Step 5: User pays all installments
-        vm.prank(user);
-        vm.deal(user, 0.6 ether); // Fund the user with enough ETH to pay the installment
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
+        // Step 5: User pays the installments
+        uint256 amount = 875 * 10 ** (usdc.decimals() - 2);
+        for (uint256 i = 0; i < 6; i++) {
+            usdc.approve(address(companyManager), amount);
+            companyManager.payInstallment(amount);
+        }
+        vm.stopPrank();
 
         // Step 6: Verify the installments are marked as paid
         (, , , bool isInstallmentPaid, , ) = companyManager.installments(0, 0);
@@ -292,8 +368,11 @@ contract CompanyManagerTest is Test {
             uint256 creditBalance,
             uint256 availableBalance
         ) = companyManager.companies(company);
-        assertEq(creditBalance, 0 ether);
-        assertEq(availableBalance, 0.4 ether + 0.525 ether);
+        assertEq(creditBalance, 0);
+        assertEq(
+            availableBalance,
+            40 * 10 ** (usdc.decimals()) + 525 * 10 ** (usdc.decimals() - 1)
+        );
 
         // step 8: verify the user's stats were updated
         (
@@ -304,50 +383,46 @@ contract CompanyManagerTest is Test {
             uint256 score,
             uint256 avaiableOnTimeScore
         ) = companyManager.userStats(user);
-        assertEq(creditsReceived, 0.5 ether);
-        assertEq(creditsPaid, 0.525 ether);
-        assertEq(score, 0.525 * 2 ether);
-        assertEq(avaiableOnTimeScore, 0.525 ether);
+        assertEq(creditsReceived, 50 * 10 ** usdc.decimals());
+        assertEq(creditsPaid, 525 * 10 ** (usdc.decimals() - 1));
+        assertEq(score, 525 * 10 ** (usdc.decimals() - 1) * 2);
+        assertEq(avaiableOnTimeScore, 525 * 10 ** (usdc.decimals() - 1));
+        // verify the credit is not active
+        (, , , , , , , , , bool isActive, bool isPaid) = companyManager
+            .recentCredits(user);
+        assertFalse(isActive);
+        assertTrue(isPaid);
     }
 
     function testRevertPayExtraInstallment() public {
-        // Step 1: Register a company and add funds
+        usdc.transfer(company, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        usdc.transfer(user, 100 * 10 ** usdc.decimals()); // Transfer 100 USDC to the company
+        // Step 1: Register a company
         vm.prank(owner);
         companyManager.registerCompany(company, 10); // 10% protocol fee
-        vm.prank(company);
-        vm.deal(company, 1 ether);
-        companyManager.addFundsCompany{value: 1 ether}();
-
-        // Step 2: Register a user
-        vm.prank(company);
+        // Step 2: Approve the CompanyManager to spend USDC on behalf of the company
+        vm.startPrank(company);
+        usdc.approve(address(companyManager), 100 * 10 ** usdc.decimals()); // Approve 100 USDC
+        // Step 3: Add funds to the company using USDC
+        companyManager.addFundsCompany(100 * 10 ** usdc.decimals());
         companyManager.registerUser(user);
-
-        // Step 3: Register a credit for the user
-        vm.prank(company);
-        companyManager.registerCredit(user, 0.5 ether, 5, 6);
+        companyManager.registerCredit(user, 50 * 10 ** usdc.decimals(), 5, 6);
+        vm.stopPrank();
 
         // Step 4: User accepts the credit
-        vm.prank(user);
-        companyManager.acceptCredit();
+        vm.startPrank(user);
+        CompanyManager.Credit memory credit = companyManager.acceptCredit();
+        assertTrue(credit.isActive);
 
-        // Step 5: User pays all installments
-        vm.prank(user);
-        vm.deal(user, 1 ether); // Fund the user with enough ETH to pay the installment
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        companyManager.payInstallment{value: 0.0875 ether}();
-        vm.prank(user);
-        vm.expectRevert("All installments are paid");
-        companyManager.payInstallment{value: 0.0875 ether}();
-
+        // Step 5: User pays the first installment
+        uint256 amount = 875 * 10 ** (usdc.decimals() - 2);
+        for (uint256 i = 0; i < 6; i++) {
+            usdc.approve(address(companyManager), amount);
+            companyManager.payInstallment(amount);
+        }
+        usdc.approve(address(companyManager), amount);
+        vm.expectRevert("El credito no esta activo");
+        companyManager.payInstallment(amount);
+        vm.stopPrank();
     }
-
 }
