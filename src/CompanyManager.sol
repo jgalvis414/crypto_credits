@@ -260,6 +260,7 @@ contract CompanyManager {
         installments[_creditId][_installmentId].score = _amount;
 
         companies[credits[_creditId].lender].avaiableBalance += _amount;
+        companies[credits[_creditId].lender].balance += _amount;
         unchecked {
             if (_amount >= companies[credits[_creditId].lender].creditBalance) {
                 companies[credits[_creditId].lender].creditBalance = 0;

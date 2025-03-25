@@ -281,6 +281,9 @@ contract CompanyManagerTest is Test {
         vm.startPrank(user);
         CompanyManager.Credit memory credit = companyManager.acceptCredit();
         assertTrue(credit.isActive);
+        (, uint256 balanceBefore, , , , , , ) = companyManager.companies(
+            company
+        );
 
         // Step 5: User pays the first installment
         usdc.approve(
@@ -297,7 +300,7 @@ contract CompanyManagerTest is Test {
         // Step 7: Verify the company's available balance is updated
         (
             ,
-            ,
+            uint256 balance,
             ,
             ,
             ,
@@ -312,6 +315,12 @@ contract CompanyManagerTest is Test {
         assertEq(
             availableBalance,
             40 * 10 ** (usdc.decimals()) + 875 * 10 ** (usdc.decimals() - 2)
+        );
+        assertEq(
+            balance,
+            balanceBefore +
+                875 *
+                10 ** (usdc.decimals() - 2)
         );
     }
 
