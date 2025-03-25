@@ -101,17 +101,15 @@ contract CompanyManagerTest is Test {
 
         // Step 6: Verify the company's balance after withdrawal
         (
-        ,
-        uint256 balanceAfter,
-        ,
-        ,
-        ,
-        ,
-        ,
-        uint256 avaiableBalance
-) = companyManager.companies(
-            company
-        );
+            ,
+            uint256 balanceAfter,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint256 avaiableBalance
+        ) = companyManager.companies(company);
         assertEq(balanceAfter, 40 * 10 ** usdc.decimals());
         assertEq(avaiableBalance, 40 * 10 ** usdc.decimals());
 
@@ -213,6 +211,25 @@ contract CompanyManagerTest is Test {
         ) = companyManager.companies(company);
         assertEq(creditBalance, 50 * 10 ** usdc.decimals());
         assertEq(availableBalance, 40 * 10 ** usdc.decimals());
+        CompanyManager.Credit[] memory companyCredits = companyManager
+            .getCompanyCredits(company);
+        assertEq(companyCredits.length, 1);
+        assertEq(companyCredits[0].id, 0);
+        assertEq(companyCredits[0].amount, 50 * 10 ** usdc.decimals());
+        assertEq(companyCredits[0].lender, company);
+        assertEq(companyCredits[0].rate, 5);
+        assertEq(
+            companyCredits[0].nextInstallmentDate,
+            block.timestamp + 30 days
+        );
+        assertEq(companyCredits[0].totalInstallments, 6);
+        assertEq(companyCredits[0].protocolFee, 10);
+        assertEq(
+            companyCredits[0].totalAmount,
+            50 * 10 ** usdc.decimals() + (50 * 10 ** usdc.decimals() * 5) / 100
+        );
+        assertFalse(companyCredits[0].isActive);
+        assertFalse(companyCredits[0].isPaid);
     }
 
     function testAcceptCredit() public {
@@ -260,6 +277,10 @@ contract CompanyManagerTest is Test {
         ) = companyManager.userStats(user);
         assertEq(creditsReceived, 50 * 10 ** usdc.decimals());
         assertEq(avaiableOnTimeScore, 525 * 10 ** (usdc.decimals() - 1));
+        CompanyManager.Credit[] memory companyCredits = companyManager
+            .getCompanyCredits(company);
+        assertTrue(companyCredits[0].isActive);
+        assertFalse(companyCredits[0].isPaid);
     }
 
     function testPayInstallment() public {
@@ -281,6 +302,9 @@ contract CompanyManagerTest is Test {
         vm.startPrank(user);
         CompanyManager.Credit memory credit = companyManager.acceptCredit();
         assertTrue(credit.isActive);
+        (, uint256 balanceBefore, , , , , , ) = companyManager.companies(
+            company
+        );
 
         // Step 5: User pays the first installment
         usdc.approve(
@@ -297,7 +321,7 @@ contract CompanyManagerTest is Test {
         // Step 7: Verify the company's available balance is updated
         (
             ,
-            ,
+            uint256 balance,
             ,
             ,
             ,
@@ -312,6 +336,12 @@ contract CompanyManagerTest is Test {
         assertEq(
             availableBalance,
             40 * 10 ** (usdc.decimals()) + 875 * 10 ** (usdc.decimals() - 2)
+        );
+        assertEq(
+            balance,
+            balanceBefore +
+                875 *
+                10 ** (usdc.decimals() - 2)
         );
     }
 
@@ -392,6 +422,9 @@ contract CompanyManagerTest is Test {
             .recentCredits(user);
         assertFalse(isActive);
         assertTrue(isPaid);
+        CompanyManager.Credit[] memory companyCredits = companyManager
+            .getCompanyCredits(company);
+        assertEq(companyCredits.length, 0);
     }
 
     function testRevertPayExtraInstallment() public {

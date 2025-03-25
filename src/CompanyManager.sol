@@ -56,7 +56,7 @@ contract CompanyManager {
         bool isPaid;
     }
 
-    struct installment {
+    struct Installment {
         uint256 creditId;
         uint256 amount;
         uint256 numberInstallment;
@@ -65,14 +65,16 @@ contract CompanyManager {
         uint256 date;
     }
 
-    mapping(uint256 creditId => installment[]) public installments;
+    mapping(uint256 creditId => Installment[]) public installments;
+
+    mapping(address company => Credit[]) public companyRegisteredCredits;
 
     function addInstallment(
         uint256 key,
         uint256 _amount,
         uint256 _numberInstallment
     ) internal {
-        installment memory newInstallment = installment({
+        Installment memory newInstallment = Installment({
             creditId: key,
             amount: _amount,
             numberInstallment: _numberInstallment,
@@ -224,6 +226,7 @@ contract CompanyManager {
 
         credits[creditCounter] = credit;
         recentCredits[_user] = credit;
+        companyRegisteredCredits[msg.sender].push(credit);
 
         creditCounter++;
     }
@@ -260,6 +263,7 @@ contract CompanyManager {
         installments[_creditId][_installmentId].score = _amount;
 
         companies[credits[_creditId].lender].avaiableBalance += _amount;
+        companies[credits[_creditId].lender].balance += _amount;
         unchecked {
             if (_amount >= companies[credits[_creditId].lender].creditBalance) {
                 companies[credits[_creditId].lender].creditBalance = 0;
@@ -286,6 +290,18 @@ contract CompanyManager {
             recentCredits[credits[_creditId].user].isActive = false;
             recentCredits[credits[_creditId].user].isPaid = true;
             users[credits[_creditId].user].hasActiveCredit = false;
+            Credit[] storage companyCredits = companyRegisteredCredits[
+                credits[_creditId].lender
+            ];
+            for (uint256 i = 0; i < companyCredits.length; i++) {
+                if (companyCredits[i].id == _creditId) {
+                    companyCredits[i] = companyCredits[
+                        companyCredits.length - 1
+                    ];
+                    companyCredits.pop();
+                    break;
+                }
+            }
         }
     }
 
@@ -303,6 +319,15 @@ contract CompanyManager {
         recentCredits[msg.sender].isActive = true;
         uint256 _creditId = recentCredits[msg.sender].id;
         credits[_creditId].isActive = true;
+        Credit[] storage companyCredits = companyRegisteredCredits[
+            credits[_creditId].lender
+        ];
+        for (uint256 i = 0; i < companyCredits.length; i++) {
+            if (companyCredits[i].id == _creditId) {
+                companyCredits[i].isActive = true;
+                break;
+            }
+        }
 
         for (
             uint256 i = 0;
@@ -327,5 +352,11 @@ contract CompanyManager {
         );
         require(success, "Transferencia fallida");
         return credits[_creditId];
+    }
+
+    function getCompanyCredits(
+        address _company
+    ) external view returns (Credit[] memory) {
+        return companyRegisteredCredits[_company];
     }
 }
